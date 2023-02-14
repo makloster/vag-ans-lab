@@ -1,0 +1,47 @@
+---
+- name: ansible playbook
+  hosts: all
+
+  pre_tasks:
+    - name: update list of available packages
+      become: yes
+      apt:
+        update_cache: yes
+        cache_valid_time: 86400
+        autoclean: yes
+
+    - name: install Git
+      apt:
+        name:
+          - git
+
+  tasks:
+    - name: create user redmine
+      user:
+        name: redmine
+        state: present
+        shell: /bin/bash
+
+    - name: install Rbenv
+      become_user: redmine
+      git:
+        repo: 'https://github.com/rbenv/rbenv.git'
+        dest: '{{ ansible_env.HOME }}/.rbenv'
+
+    - name: eval1
+      lineinfile:
+        path: "{{ ansible_env.HOME }}/.rbenv/.bashrc"
+        line: eval "~/.rbenv/bin/rbenv init - bash)"
+
+    - name: install ruby-build
+      become_user: redmine
+      git: 
+        repo: 'https://github.com/rbenv/ruby-build.git'
+        dest: '{{ ansible_env.HOME }}/.rbenv/plugins/ruby-build'
+
+    - name: eval2
+      lineinfile:
+        path: "{{ rbenv_dir }}/.bashrc"
+        line: eval "~/.rbenv/bin/rbenv init - bash)" 
+                                                       
+#meta: reset_connection # logout -> login
