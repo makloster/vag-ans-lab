@@ -4,56 +4,56 @@
 
   pre_tasks:
     - name: Install tools and dependencies
-      become: yes
+      become: true
       block:
-      - name: Update list of available packages
-        apt:
-          update_cache: yes
-          cache_valid_time: 86400
-          autoclean: yes
-
-      - name: Install Git & ACL
-        apt:
-          name:
-            - git
-            - acl
-
-      - name: Install development tools
-        apt:
-          name:
-            - build-essential
-
-      - name: Install Ruby dependencies
-        apt:
-          name:
-            - autoconf
-            - bison
-            - patch
-            - rustc
-            - libssl-dev 
-            - libyaml-dev 
-            - libreadline6-dev 
-            - zlib1g-dev 
-            - libgmp-dev 
-            - libncurses5-dev 
-            - libffi-dev 
-            - libgdbm6 
-            - libgdbm-dev 
-            - libdb-dev 
-            - uuid-dev
+        - name: Update list of available packages
+          apt:
+            update_cache: true
+            cache_valid_time: 86400
+            autoclean: true
+       
+        - name: Install Git & ACL
+          apt:
+            name:
+              - git
+              - acl
+       
+        - name: Install development tools
+          apt:
+            name:
+              - build-essential
+       
+        - name: Install Ruby dependencies
+          apt:
+            name:
+              - autoconf
+              - bison
+              - patch
+              - rustc
+              - libssl-dev 
+              - libyaml-dev 
+              - libreadline6-dev 
+              - zlib1g-dev 
+              - libgmp-dev 
+              - libncurses5-dev 
+              - libffi-dev 
+              - libgdbm6 
+              - libgdbm-dev 
+              - libdb-dev 
+              - uuid-dev
 
   tasks:
     - name: Create user redmine
-      become: yes
+      become: true
       user:
         name: redmine
         home: "{{ redmine_user_home }}"
         state: present
         shell: /bin/bash
 
-    - name: Installations under redmine user
+    - name: Install Rbenv and Ruby-build before Ruby
       become_user: redmine
-      become: yes
+      become: true
       block:
         - name: Clone Rbenv repo
           git:
@@ -68,15 +68,61 @@
         - name: Configure shell to load Rbenv
           lineinfile:
             path: "{{ redmine_user_home }}/.bashrc"
-            line: eval "{{ redmine_user_home }}/.rbenv/bin/rbenv init - bash"
+            line: |
+              export RBENV_ROOT="{{ redmine_user_home }}/.rbenv"
+              export PATH="{{ redmine_user_home }}/.rbenv/bin:${PATH}"
+              eval "$(rbenv init -)"
 
+    - name: Install Ruby 3.1.3
+      become_user: redmine
+      become: true
+      block:
         - name: Install Ruby 3.1.3
           command: "{{ redmine_user_home }}/.rbenv/bin/rbenv install 3.1.3 -s"
 
         - name: Set local Ruby version
           command: "{{ redmine_user_home }}/.rbenv/bin/rbenv global 3.1.3 -s"
-        
-             #       - name: checkout Redmine source files
-             #         git:
-             #           repo: "https://github.com/redmine/redmine"
-             #           dest: "{{ redmine_user_home }}"
+ 
+    - name: Download and extract Redmine 5.0.4 repo
+      become_user: redmine
+      become: true
+      unarchive:
+        src: "https://github.com/redmine/redmine/archive/refs/tags/5.0.4.tar.gz"
+        dest: "{{ redmine_user_home }}/"
+        remote_src: true
+
+    - name: DB files configuration
+      become_user: redmine
+      become: true
+      block:
+        - name: Create database.yml
+          copy:
+            src: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml.example"
+            dest: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml"
+            remote_src: true
+
+   
+        - name: Create configuration.yml
+          copy:
+            src: "{{ redmine_user_home }}/redmine-5.0.4/config/configuration.yml.example"
+            dest: "{{ redmine_user_home }}/redmine-5.0.4/config/configuration.yml"
+            remote_src: true
+     
+        - name: Cleanup of database.yml
+          lineinfile:
+            path: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml"
+            regexp: "^development:"
+            state: absent
+
+    - name: Install bundle
+      block:
+        - name: Install library for MySQL Client 
+          become: true
+          apt:
+            name:
+              - default-libmysqlclient-dev
+ 
+        - name: Install bundle as redmine user
+          become: true
+          become_user: redmine
+          command: "{{ redmine_user_home }}/redmine-5.0.4/rbenv exec bundle install"
