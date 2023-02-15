@@ -1,2 +1,2 @@
-# RBENV vars
-rbenv_dir: /home/vagrant/.rbenv 
+# vars
+redmine_user_home: /home/redmine

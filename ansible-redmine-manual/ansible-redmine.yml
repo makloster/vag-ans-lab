@@ -1,86 +1,82 @@
 ---
-- name: ansible playbook
+- name: Ansible playbook
   hosts: all
 
   pre_tasks:
-    - name: update list of available packages
+    - name: Install tools and dependencies
       become: yes
-      apt:
-        update_cache: yes
-        cache_valid_time: 86400
-        autoclean: yes
+      block:
+      - name: Update list of available packages
+        apt:
+          update_cache: yes
+          cache_valid_time: 86400
+          autoclean: yes
 
-    - name: install Git and build environment dependencies
-      become: yes
-      apt:
-        name:
-          - git
-          - autoconf
-          - bison
-          - patch
-          - build-essential
-          - rustc
-          - libssl-dev 
-          - libyaml-dev 
-          - libreadline6-dev 
-          - zlib1g-dev 
-          - libgmp-dev 
-          - libncurses5-dev 
-          - libffi-dev 
-          - libgdbm6 
-          - libgdbm-dev 
-          - libdb-dev 
-          - uuid-dev
+      - name: Install Git & ACL
+        apt:
+          name:
+            - git
+            - acl
+
+      - name: Install development tools
+        apt:
+          name:
+            - build-essential
+
+      - name: Install Ruby dependencies
+        apt:
+          name:
+            - autoconf
+            - bison
+            - patch
+            - rustc
+            - libssl-dev 
+            - libyaml-dev 
+            - libreadline6-dev 
+            - zlib1g-dev 
+            - libgmp-dev 
+            - libncurses5-dev 
+            - libffi-dev 
+            - libgdbm6 
+            - libgdbm-dev 
+            - libdb-dev 
+            - uuid-dev
 
   tasks:
-    - name: create user redmine
+    - name: Create user redmine
+      become: yes
       user:
         name: redmine
+        home: "{{ redmine_user_home }}"
         state: present
         shell: /bin/bash
 
-    - name: installations under redmine user
+    - name: Installations under redmine user
       become_user: redmine
+      become: yes
       block:
-        - name: install Rbenv
+        - name: Clone Rbenv repo
           git:
             repo: "https://github.com/rbenv/rbenv.git"
-            dest: "{{ ansible_env.HOME }}/.rbenv"
+            dest: "{{ redmine_user_home }}/.rbenv"
 
-        #    - name: configure shell to load rbenv
-        #      become_user: redmine
-        #      lineinfile:
-        #        path: "{{ ansible_env.HOME }}/.bashrc"
-        #        line: eval "{{ ansible_env.HOME }}/bin/rbenv init - bash"
-
-        - name: install ruby-build
-          git: 
+        - name: Clone Ruby-build repo
+          git:
             repo: "https://github.com/rbenv/ruby-build.git"
-            dest: "{{ ansible_env.HOME }}/.rbenv/plugins/ruby-build"
+            dest: "{{ redmine_user_home }}/.rbenv/plugins/ruby-build"
 
-        - name: eval1
+        - name: Configure shell to load Rbenv
           lineinfile:
-            path: "{{ ansible_env.HOME }}/.bashrc"
-            line: eval "{{ ansible_env.HOME }}/bin/rbenv init - bash"
+            path: "{{ redmine_user_home }}/.bashrc"
+            line: eval "{{ redmine_user_home }}/.rbenv/bin/rbenv init - bash"
 
-        - name: check
-          debug:
-            msg: "{{ ansible_env.HOME }}"
+        - name: Install Ruby 3.1.3
+          command: "{{ redmine_user_home }}/.rbenv/bin/rbenv install 3.1.3 -s"
 
-            #    - name: install ruby 3.1.3
-            #      become: yes
-            #      command:
-            #        cmd: "rbenv install 3.1.3"
-
-             #   - name: installations under redmine user
-             #     become_user: redmine
-             #     block:
-             #
-             #       - name: set local ruby version
-             #         command:
-             #           cmd: "rbenv local 3.1.3"
-             #
+        - name: Set local Ruby version
+          command: "{{ redmine_user_home }}/.rbenv/bin/rbenv global 3.1.3 -s"
+        
              #       - name: checkout Redmine source files
              #         git:
              #           repo: "https://github.com/redmine/redmine"
-             #           dest: "{{ ansible_env.HOME }}/opt/redmine"
+             #           dest: "{{ redmine_user_home }}"
