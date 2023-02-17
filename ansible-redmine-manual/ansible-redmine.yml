@@ -2,6 +2,14 @@
 - name: Ansible playbook
   hosts: all
 
+  environment:
+    RBENV_ROOT: "{{ rbenv_dir }}"
+    PATH: "{{ rbenv_dir }}/bin:{{ rbenv_dir }}/shims:{{ rbenv_dir }}/plugins/ruby-build/bin:{{ ansible_env.PATH }}"
+
+  collections:
+    - community.mysql.mysql_user
+    - community.mysql.mysql_db
+
   pre_tasks:
     - name: Install tools and dependencies
       become: true
@@ -20,8 +28,7 @@
        
         - name: Install development tools
           apt:
-            name:
-              - build-essential
+            name: build-essential
        
         - name: Install Ruby dependencies
           apt:
@@ -42,6 +49,11 @@
               - libdb-dev 
               - uuid-dev
 
+        - name: Install pymysql
+          become: true
+          apt:
+            name: python3-pymysql
+
   tasks:
     - name: Create user redmine
       become: true
@@ -58,31 +70,28 @@
         - name: Clone Rbenv repo
           git:
             repo: "https://github.com/rbenv/rbenv.git"
-            dest: "{{ redmine_user_home }}/.rbenv"
+            dest: "{{ rbenv_dir }}"
 
         - name: Clone Ruby-build repo
           git:
             repo: "https://github.com/rbenv/ruby-build.git"
-            dest: "{{ redmine_user_home }}/.rbenv/plugins/ruby-build"
+            dest: "{{ rbenv_dir }}/plugins/ruby-build"
 
         - name: Configure shell to load Rbenv
           lineinfile:
             path: "{{ redmine_user_home }}/.bashrc"
-            line: |
-              export RBENV_ROOT="{{ redmine_user_home }}/.rbenv"
-              export PATH="{{ redmine_user_home }}/.rbenv/bin:${PATH}"
-              eval "$(rbenv init -)"
+            line: 'eval "$(~/.rbenv/bin/rbenv init - bash)"'
 
     - name: Install Ruby 3.1.3
       become_user: redmine
       become: true
       block:
         - name: Install Ruby 3.1.3
-          command: "{{ redmine_user_home }}/.rbenv/bin/rbenv install 3.1.3 -s"
+          command: "rbenv install 3.1.3 -s"
 
         - name: Set local Ruby version
-          command: "{{ redmine_user_home }}/.rbenv/bin/rbenv global 3.1.3 -s"
- 
+          command: "rbenv global 3.1.3 -s"
+      
     - name: Download and extract Redmine 5.0.4 repo
       become_user: redmine
       become: true
@@ -90,29 +99,6 @@
         src: "https://github.com/redmine/redmine/archive/refs/tags/5.0.4.tar.gz"
         dest: "{{ redmine_user_home }}/"
         remote_src: true
-
-    - name: DB files configuration
-      become_user: redmine
-      become: true
-      block:
-        - name: Create database.yml
-          copy:
-            src: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml.example"
-            dest: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml"
-            remote_src: true
-
-   
-        - name: Create configuration.yml
-          copy:
-            src: "{{ redmine_user_home }}/redmine-5.0.4/config/configuration.yml.example"
-            dest: "{{ redmine_user_home }}/redmine-5.0.4/config/configuration.yml"
-            remote_src: true
-     
-        - name: Cleanup of database.yml
-          lineinfile:
-            path: "{{ redmine_user_home }}/redmine-5.0.4/config/database.yml"
-            regexp: "^development:"
-            state: absent
 
     - name: Install bundle
       block:
@@ -125,4 +111,90 @@
         - name: Install bundle as redmine user
           become: true
           become_user: redmine
-          command: "{{ redmine_user_home }}/redmine-5.0.4/rbenv exec bundle install"
+          command: bundle install
+          args:
+            chdir: "{{ redmine_dir }}"
+
+    - name: Install MySQL server and config MySQL
+      become: true
+      block:
+        - name: Install MySQL server
+          apt:
+            name: mysql-server
+            state: present
+
+        - name: Update user plugin
+          become_user: mysql
+          mysql_user:
+            login_user: root
+            login_password: "{{ mysql_root_password }}"
+            user: root
+            plugin: ""
+          # host_all: yes
+
+            #        - name: Change root user password
+            #          mysql_user:
+            #            name: root
+            #            password: "{{ mysql_root_password }}"
+            #            login_unix_socket: "{{ login_unix_socket }}"
+            #            check_implicit_admin: yes
+            #            login_user: root
+
+    - name: Create and config DB
+      become: true
+      become_user: redmine
+      block:
+        - name: Create database.yml
+          copy:
+            src: "{{ db_config_dir }}/database.yml.example"
+            dest: "{{ db_config_dir }}/database.yml"
+            remote_src: true
+   
+        - name: Create configuration.yml
+          copy:
+            src: "{{ db_config_dir }}/configuration.yml.example"
+            dest: "{{ db_config_dir }}/configuration.yml"
+            remote_src: true
+     
+        - name: Cleanup of database.yml
+          replace:
+            path: "{{ db_config_dir }}/database.yml"
+            regexp: '^development:.*[\s\S]*'
+            replace: ''
+
+        - name: Cleanup of configuration.yml
+          replace:
+            path: "{{ db_config_dir }}/configuration.yml"
+            regexp: '^[[:space:]]*#.*$|^[[:space:]]*$'
+            replace: ''
+
+        - name: Create new MySQL database
+          mysql_db:
+            name: "{{ mysql_database }}"
+            state: present
+            login_unix_socket: "{{ login_unix_socket }}"
+            login_user: root
+            login_password: "{{ mysql_root_password }}"
+ 
+        - name: Create new MySQL user
+          mysql_user:
+            login_user: root
+            login_password: "{{ mysql_root_password }}"
+            name: "{{ mysql_user }}"
+            priv: "{{ mysql_database }}.*:ALL"
+            login_unix_socket: "{{ login_unix_socket }}"
+
+        - name: Create secret token
+          command:
+            bundle exec rake generate_secret_token
+            chdir={{ redmine_dir }}
+          environment:
+            RAILS_ENV: production
+
+        - name: Migrate database
+          command:
+            bundle exec rake db:migrate
+            chdir={{ redmine_dir }}
+          environment:
+            RAILS_ENV: production
+
