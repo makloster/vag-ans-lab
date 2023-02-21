@@ -115,7 +115,7 @@
           args:
             chdir: "{{ redmine_dir }}"
 
-    - name: Install MySQL server and config MySQL
+    - name: Install MySQL server and config root user plugin
       become: true
       block:
         - name: Install MySQL server
@@ -123,26 +123,17 @@
             name: mysql-server
             state: present
 
-        - name: Update user plugin
-          become_user: mysql
-          mysql_user:
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
-            user: root
-            plugin: ""
-          # host_all: yes
+        #- name: Update user plugin # working?
+        #  become_user: mysql
+        #  mysql_user:
+        #    login_user: root
+        #    login_password: "{{ mysql_root_password }}"
+        #    user: root
+        #    plugin: ""
 
-            #        - name: Change root user password
-            #          mysql_user:
-            #            name: root
-            #            password: "{{ mysql_root_password }}"
-            #            login_unix_socket: "{{ login_unix_socket }}"
-            #            check_implicit_admin: yes
-            #            login_user: root
-
-    - name: Create and config DB
+    - name: Create config files and DB
       become: true
-      become_user: redmine
+      become_user: redmine 
       block:
         - name: Create database.yml
           copy:
@@ -155,46 +146,90 @@
             src: "{{ db_config_dir }}/configuration.yml.example"
             dest: "{{ db_config_dir }}/configuration.yml"
             remote_src: true
-     
-        - name: Cleanup of database.yml
-          replace:
-            path: "{{ db_config_dir }}/database.yml"
-            regexp: '^development:.*[\s\S]*'
-            replace: ''
 
-        - name: Cleanup of configuration.yml
-          replace:
-            path: "{{ db_config_dir }}/configuration.yml"
-            regexp: '^[[:space:]]*#.*$|^[[:space:]]*$'
-            replace: ''
-
-        - name: Create new MySQL database
-          mysql_db:
-            name: "{{ mysql_database }}"
-            state: present
-            login_unix_socket: "{{ login_unix_socket }}"
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
+        - name: Cleanup of yml files
+          block:
+          - name: Cleanup of database.yml
+            replace:
+              path: "{{ db_config_dir }}/database.yml"
+              regexp: '^development:.*[\s\S]*'
+              replace: ''
  
-        - name: Create new MySQL user
+          - name: Cleanup of configuration.yml
+            replace:
+              path: "{{ db_config_dir }}/configuration.yml"
+              regexp: '^\s*#.*$|^\s*$' 
+              replace: ''
+ 
+#        - name: Create new MySQL database
+#          mysql_db:
+#            name: "{{ mysql_database }}"
+#            state: present
+#            login_unix_socket: "{{ login_unix_socket }}"
+#            login_user: "{{ mysql_user }}"
+#            login_password: "{{ mysql_password }}"
+
+#        - name: Create new MySQL user
+#          mysql_user:
+#            login_user: root
+#            login_password: "{{ mysql_root_password }}"
+#            name: "{{ mysql_user }}"
+#            password: "{{ mysql_password }}"
+#            priv: "{{ mysql_database }}.*:ALL"
+#            login_unix_socket: "{{ login_unix_socket }}"
+
+        - name: Create user
           mysql_user:
             login_user: root
             login_password: "{{ mysql_root_password }}"
             name: "{{ mysql_user }}"
-            priv: "{{ mysql_database }}.*:ALL"
+            password: "{{ mysql_password }}"
             login_unix_socket: "{{ login_unix_socket }}"
+            host: localhost
+       
+            #        - name: Grant privileges
+            #          mysql_user:
+            #            name: "{{ mysql_user }}"
+            #            priv: '*.*:ALL'
+            #            host: localhost
+            #            login_unix_socket: "{{ login_unix_socket }}"
+            #            state: present
+            #            append_privs: yes
+            #            with_grant_option: yes
+  
+        - name: Create database      
+          mysql_db:
+            name: "{{ mysql_database }}"
+            login_user: "{{ mysql_user }}"
+            login_password: "{{ mysql_password }}"
+            state: present
+            collation: utf8mb4_general_ci
+            encoding: utf8mb4
 
-        - name: Create secret token
-          command:
-            bundle exec rake generate_secret_token
-            chdir={{ redmine_dir }}
-          environment:
-            RAILS_ENV: production
+        - name: Create token, create schema objects
+          block:
+            - name: Session store secret generation
+              command:
+                bundle exec rake generate_secret_token RAILS_ENV=production
+              args:
+                chdir: "{{ redmine_dir }}"
+  
+            - name: Database schema objects creation
+              mysql_db:
+                login_user: "{{ mysql_user }}"
+                login_password: "{{ mysql_password }}"
+                login_host: localhost
+                name: "{{ mysql_database }}"
+                state: present
+              environment:
+                RAILS_ENV: production
+              args:
+                executable: /redmine-5.0.4/bin/bundle
+                cmd: rake db:migrate
 
-        - name: Migrate database
-          command:
-            bundle exec rake db:migrate
-            chdir={{ redmine_dir }}
-          environment:
-            RAILS_ENV: production
+                # - name: Database schema objects creation
+                #   command:
+                #     bundle exec rake db:migrate RAILS_ENV=production
+                #   args:
+                #     chdir: "{{ redmine_dir }}"
 
