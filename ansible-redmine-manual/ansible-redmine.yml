@@ -159,6 +159,7 @@
             encoding: utf8mb4
           environment:
             RAILS_ENV: production
+          register: dbCreation
 
         - name: Create database.yml from template
           template:
@@ -176,18 +177,19 @@
           command: "bundle exec rake generate_secret_token"
           args:
             chdir: "{{ redmine_dir }}"
+          when: dbCreation.changed
 
         - name: Database schema objects creation
           command: "bundle exec rake db:migrate RAILS_ENV=production"
           args:
             chdir: "{{ redmine_dir }}"
+          when: dbCreation.changed
 
-            # HACER IDEMPOTENTE 
-            #        - name: Load example data for DB
-            #          command:
-            #            bundle exec rake redmine:load_default_data RAILS_ENV=production REDMINE_LANG=es 
-            #          args:
-            #            chdir: "{{ redmine_dir }}"
+        - name: Load example data for DB
+          command: "bundle exec rake redmine:load_default_data RAILS_ENV=production REDMINE_LANG=es"
+          args:
+            chdir: "{{ redmine_dir }}"
+          when: dbCreation.changed
 
         - name: Boot Puma
           command: "bundle exec rails server -e production"
