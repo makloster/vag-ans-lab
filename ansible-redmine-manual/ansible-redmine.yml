@@ -111,7 +111,7 @@
         - name: Install bundle as redmine user
           become: true
           become_user: redmine
-          command: bundle install
+          command: "bundle install"
           args:
             chdir: "{{ redmine_dir }}"
 
@@ -123,82 +123,32 @@
             name: mysql-server
             state: present
 
-        - name: Update MySQL root password
+        - name: Update MySQL root password # HACER IDEMPOTENTE
           mysql_user:
             name: root
-            #name: mysql
             login_user: root
-            login_password: "{{ mysql_default_root_password }}"
+            login_password: ''
             login_unix_socket: "{{ login_unix_socket }}" 
             password: "{{ mysql_root_password }}"
             host_all: yes
             check_implicit_admin: yes
             state: present
 
-            # mysql -u root
-            # "ALTER USER '{{ mysql_root_username }}'@'{{ mysql_host }}'
-            #  IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
-
-            #        - name: Changing the root password
-            #          mysql_user:
-            #            user: root
-            #            password: "{{ mysql_root_password }}"
-            #            login_user: root
-            #            login_password: "{{ mysql_default_root_password }}"
-            #            priv: "*.*:ALL,GRANT"
-
-            #        - name: Update user plugin # SEGUIR
-            #          mysql_user:
-            #            login_user: mysql
-            #            user: root
-            #            password: "{{ mysql_root_password }}"
-            #            plugin: ""
+        - name: Create MySQL user for Redmine
+          mysql_user:
+            name: "{{ mysql_user }}"
+            login_user: root
+            login_password: "{{ mysql_root_password }}"
+            login_unix_socket: "{{ login_unix_socket }}" 
+            password: "{{ mysql_password }}"
+            priv: '*.*:ALL'
+            host: localhost
+            state: present
 
     - name: Create config files and DB
       become: true
       become_user: redmine 
       block:
-        - name: Create database.yml
-          copy:
-            src: "{{ db_config_dir }}/database.yml.example"
-            dest: "{{ db_config_dir }}/database.yml"
-            remote_src: true
-   
-        - name: Create configuration.yml
-          copy:
-            src: "{{ db_config_dir }}/configuration.yml.example"
-            dest: "{{ db_config_dir }}/configuration.yml"
-            remote_src: true
-
-        - name: Cleanup of yml files
-          block:
-          - name: Cleanup of database.yml
-            replace:
-              path: "{{ db_config_dir }}/database.yml"
-              regexp: '^development:.*[\s\S]*'
-              replace: ''
- 
-          - name: Cleanup of configuration.yml
-            replace:
-              path: "{{ db_config_dir }}/configuration.yml"
-              regexp: '^\s*(#.*|scm_.*|development:.*)$'
-              replace: ''
-
-          - name: Remove empty lines and line breaks from configuration.yml
-            replace:
-              path: "{{ db_config_dir }}/configuration.yml"
-              regexp: '^$|^\s+$'
-              replace: ''
- 
-        - name: Create user
-          mysql_user:
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
-            name: "{{ mysql_user }}"
-            password: "{{ mysql_password }}"
-            login_unix_socket: "{{ login_unix_socket }}"
-            #host: localhost
-       
         - name: Create database      
           mysql_db:
             name: "{{ mysql_database }}"
@@ -207,15 +157,40 @@
             state: present
             collation: utf8mb4_general_ci
             encoding: utf8mb4
+          environment:
+            RAILS_ENV: production
+
+        - name: Create database.yml from template
+          template:
+            src: database.j2
+            dest: "{{ db_config_dir }}/database.yml"
+            force: yes
+
+        - name: Create configuration.yml from template
+          template:
+            src: configuration.j2
+            dest: "{{ db_config_dir }}/configuration.yml"
+            force: yes
 
         - name: Session store secret generation
-          command:
-            bundle exec rake generate_secret_token
+          command: "bundle exec rake generate_secret_token"
           args:
             chdir: "{{ redmine_dir }}"
-  
+
         - name: Database schema objects creation
-          command:
-            bundle exec rake db:migrate RAILS_ENV=production
+          command: "bundle exec rake db:migrate RAILS_ENV=production"
           args:
             chdir: "{{ redmine_dir }}"
+
+            # HACER IDEMPOTENTE 
+            #        - name: Load example data for DB
+            #          command:
+            #            bundle exec rake redmine:load_default_data RAILS_ENV=production REDMINE_LANG=es 
+            #          args:
+            #            chdir: "{{ redmine_dir }}"
+
+        - name: Boot Puma
+          command: "bundle exec rails server -e production"
+          args:
+            chdir: "{{ redmine_dir }}"
+
