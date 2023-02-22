@@ -123,13 +123,36 @@
             name: mysql-server
             state: present
 
-        #- name: Update user plugin # working?
-        #  become_user: mysql
-        #  mysql_user:
-        #    login_user: root
-        #    login_password: "{{ mysql_root_password }}"
-        #    user: root
-        #    plugin: ""
+        - name: Update MySQL root password
+          mysql_user:
+            name: root
+            #name: mysql
+            login_user: root
+            login_password: "{{ mysql_default_root_password }}"
+            login_unix_socket: "{{ login_unix_socket }}" 
+            password: "{{ mysql_root_password }}"
+            host_all: yes
+            check_implicit_admin: yes
+            state: present
+
+            # mysql -u root
+            # "ALTER USER '{{ mysql_root_username }}'@'{{ mysql_host }}'
+            #  IDENTIFIED WITH mysql_native_password BY '{{ mysql_root_password }}'; FLUSH PRIVILEGES;"
+
+            #        - name: Changing the root password
+            #          mysql_user:
+            #            user: root
+            #            password: "{{ mysql_root_password }}"
+            #            login_user: root
+            #            login_password: "{{ mysql_default_root_password }}"
+            #            priv: "*.*:ALL,GRANT"
+
+            #        - name: Update user plugin # SEGUIR
+            #          mysql_user:
+            #            login_user: mysql
+            #            user: root
+            #            password: "{{ mysql_root_password }}"
+            #            plugin: ""
 
     - name: Create config files and DB
       become: true
@@ -158,26 +181,15 @@
           - name: Cleanup of configuration.yml
             replace:
               path: "{{ db_config_dir }}/configuration.yml"
-              regexp: '^\s*#.*$|^\s*$' 
+              regexp: '^\s*(#.*|scm_.*|development:.*)$'
+              replace: ''
+
+          - name: Remove empty lines and line breaks from configuration.yml
+            replace:
+              path: "{{ db_config_dir }}/configuration.yml"
+              regexp: '^$|^\s+$'
               replace: ''
  
-#        - name: Create new MySQL database
-#          mysql_db:
-#            name: "{{ mysql_database }}"
-#            state: present
-#            login_unix_socket: "{{ login_unix_socket }}"
-#            login_user: "{{ mysql_user }}"
-#            login_password: "{{ mysql_password }}"
-
-#        - name: Create new MySQL user
-#          mysql_user:
-#            login_user: root
-#            login_password: "{{ mysql_root_password }}"
-#            name: "{{ mysql_user }}"
-#            password: "{{ mysql_password }}"
-#            priv: "{{ mysql_database }}.*:ALL"
-#            login_unix_socket: "{{ login_unix_socket }}"
-
         - name: Create user
           mysql_user:
             login_user: root
@@ -185,18 +197,8 @@
             name: "{{ mysql_user }}"
             password: "{{ mysql_password }}"
             login_unix_socket: "{{ login_unix_socket }}"
-            host: localhost
+            #host: localhost
        
-            #        - name: Grant privileges
-            #          mysql_user:
-            #            name: "{{ mysql_user }}"
-            #            priv: '*.*:ALL'
-            #            host: localhost
-            #            login_unix_socket: "{{ login_unix_socket }}"
-            #            state: present
-            #            append_privs: yes
-            #            with_grant_option: yes
-  
         - name: Create database      
           mysql_db:
             name: "{{ mysql_database }}"
@@ -206,30 +208,14 @@
             collation: utf8mb4_general_ci
             encoding: utf8mb4
 
-        - name: Create token, create schema objects
-          block:
-            - name: Session store secret generation
-              command:
-                bundle exec rake generate_secret_token RAILS_ENV=production
-              args:
-                chdir: "{{ redmine_dir }}"
+        - name: Session store secret generation
+          command:
+            bundle exec rake generate_secret_token
+          args:
+            chdir: "{{ redmine_dir }}"
   
-            - name: Database schema objects creation
-              mysql_db:
-                login_user: "{{ mysql_user }}"
-                login_password: "{{ mysql_password }}"
-                login_host: localhost
-                name: "{{ mysql_database }}"
-                state: present
-              environment:
-                RAILS_ENV: production
-              args:
-                executable: /redmine-5.0.4/bin/bundle
-                cmd: rake db:migrate
-
-                # - name: Database schema objects creation
-                #   command:
-                #     bundle exec rake db:migrate RAILS_ENV=production
-                #   args:
-                #     chdir: "{{ redmine_dir }}"
-
+        - name: Database schema objects creation
+          command:
+            bundle exec rake db:migrate RAILS_ENV=production
+          args:
+            chdir: "{{ redmine_dir }}"
