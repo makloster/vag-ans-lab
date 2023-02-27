@@ -5,6 +5,8 @@
   environment:
     RBENV_ROOT: "{{ rbenv_dir }}"
     PATH: "{{ rbenv_dir }}/bin:{{ rbenv_dir }}/shims:{{ rbenv_dir }}/plugins/ruby-build/bin:{{ ansible_env.PATH }}"
+    RAILS_ENV: "production"
+    REDMINE_LANG: "es"
 
   collections:
     - community.mysql.mysql_user
@@ -59,6 +61,7 @@
       become: true
       user:
         name: redmine
+        #password: "{{ redmine_user_pass | password_hash('sha512', my_salt_variable) }}"
         home: "{{ redmine_user_home }}"
         state: present
         shell: /bin/bash
@@ -159,40 +162,57 @@
             encoding: utf8mb4
           environment:
             RAILS_ENV: production
-          register: dbCreation
 
         - name: Create database.yml from template
           template:
             src: database.j2
-            dest: "{{ db_config_dir }}/database.yml"
+            dest: "{{ config_dir }}/database.yml"
             force: yes
 
         - name: Create configuration.yml from template
           template:
             src: configuration.j2
-            dest: "{{ db_config_dir }}/configuration.yml"
+            dest: "{{ config_dir }}/configuration.yml"
             force: yes
 
         - name: Session store secret generation
           command: "bundle exec rake generate_secret_token"
           args:
             chdir: "{{ redmine_dir }}"
-          when: dbCreation.changed
 
         - name: Database schema objects creation
-          command: "bundle exec rake db:migrate RAILS_ENV=production"
+          command: "bundle exec rake db:migrate"
           args:
             chdir: "{{ redmine_dir }}"
-          when: dbCreation.changed
 
         - name: Load example data for DB
-          command: "bundle exec rake redmine:load_default_data RAILS_ENV=production REDMINE_LANG=es"
-          args:
-            chdir: "{{ redmine_dir }}"
-          when: dbCreation.changed
-
-        - name: Boot Puma
-          command: "bundle exec rails server -e production"
+          command: "bundle exec rake redmine:load_default_data"
           args:
             chdir: "{{ redmine_dir }}"
 
+    - name: Install nginx and setup config
+      become: true
+      block:
+        - name: Install nginx
+          apt:
+            name:
+              - nginx
+
+        - name: Modify default config file from template
+          template:
+            src: default.j2
+            dest: "/etc/nginx/sites-available/default"
+            force: yes
+
+        - name: Modify production.rb from template
+          template:
+            src: production.j2
+            dest: "{{ config_dir }}/environments/production.rb"
+            force: yes
+
+
+
+          #- name: Boot Puma # LO VAMOS A SETTEAR DE OTRA MANERA
+          #  command: "bundle exec rails server -e production"
+          #  args:
+          #    chdir: "{{ redmine_dir }}"

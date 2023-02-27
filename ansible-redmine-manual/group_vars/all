@@ -2,10 +2,14 @@
 redmine_user_home: /home/redmine
 rbenv_dir: /home/redmine/.rbenv
 redmine_dir: /home/redmine/redmine-5.0.4
-db_config_dir: /home/redmine/redmine-5.0.4/config
+config_dir: /home/redmine/redmine-5.0.4/config
 mysql_datadir: /var/lib/mysql
 login_unix_socket: /var/run/mysqld/mysqld.sock
 test_schemas_dir: /redmine-5.0.4/lib/plugins/acts_as_tree/test/schema.rb
+
+# redmine credentials
+redmine_user_pass: 789a456z
+my_salt_variable: dFku7402
 
 # mysql vars
 mysql_database: redmine-db
@@ -14,6 +18,5 @@ mysql_host: localhost
 # mysql credentials
 mysql_root_username: root
 mysql_root_password: ''
-#mysql_root_password: root-pswd
 mysql_user: redmine
 mysql_password: redmine-user-pswd
