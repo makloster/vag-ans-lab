@@ -103,23 +103,35 @@
         dest: "{{ redmine_user_home }}/"
         remote_src: true
 
-    - name: Install bundle
-      block:
-        - name: Install library for MySQL Client 
-          become: true
-          apt:
-            name:
-              - default-libmysqlclient-dev
+    - name: Install library for MySQL Client 
+      become: true
+      apt:
+        name:
+          - default-libmysqlclient-dev
  
+    - name: Install bundle
+      become: true
+      become_user: redmine
+      block:
+        - name: Create database.yml from template
+          template:
+            src: database.j2
+            dest: "{{ config_dir }}/database.yml"
+
+        - name: Create configuration.yml from template
+          template:
+            src: configuration.j2
+            dest: "{{ config_dir }}/configuration.yml"
+
         - name: Install bundle as redmine user
-          become: true
-          become_user: redmine
           command: "bundle install"
           args:
             chdir: "{{ redmine_dir }}"
 
     - name: Install MySQL server and config root user plugin
       become: true
+      tags:
+        - mysql
       block:
         - name: Install MySQL server
           apt:
@@ -150,7 +162,9 @@
 
     - name: Create config files and DB
       become: true
-      become_user: redmine 
+      become_user: redmine
+      tags:
+        - DB 
       block:
         - name: Create database      
           mysql_db:
@@ -162,18 +176,6 @@
             encoding: utf8mb4
           environment:
             RAILS_ENV: production
-
-        - name: Create database.yml from template
-          template:
-            src: database.j2
-            dest: "{{ config_dir }}/database.yml"
-            force: yes
-
-        - name: Create configuration.yml from template
-          template:
-            src: configuration.j2
-            dest: "{{ config_dir }}/configuration.yml"
-            force: yes
 
         - name: Session store secret generation
           command: "bundle exec rake generate_secret_token"
@@ -190,6 +192,46 @@
           args:
             chdir: "{{ redmine_dir }}"
 
+        - name: Modify production.rb from template
+          template:
+            src: production.j2
+            dest: "{{ config_dir }}/environments/production.rb"
+
+    - name: Start and config Puma
+      become: true
+      tags:
+        - doit
+      block:
+        - name: Create Puma socket directory
+          file:
+            path: "{{ redmine_dir }}/shared/sockets/"
+            state: directory
+            mode: 0755
+            owner: redmine
+            group: redmine
+
+        - name: Create logs directory
+          file:
+            path: "{{ redmine_dir }}/shared/log/"
+            state: directory
+            mode: 0755
+            owner: redmine
+            group: redmine
+
+#        - name: Initiate Puma service
+#          become_user: redmine 
+#          systemd:
+#            name: puma
+#            state: started
+#            enabled: yes
+#    
+#        - name: Setup Puma config
+#          become_user: redmine 
+#          template:
+#            src: puma-config.j2
+#            dest: "{{ config_dir }}/puma.rb"
+#          notify: Restart Puma
+
     - name: Install nginx and setup config
       become: true
       block:
@@ -198,21 +240,34 @@
             name:
               - nginx
 
-        - name: Modify default config file from template
+        - name: Initiate NGINX service
+          systemd:
+            name: nginx
+            state: started
+            enabled: yes
+
+        - name: Config NGINX with template
           template:
             src: default.j2
             dest: "/etc/nginx/sites-available/default"
-            force: yes
+          notify: Restart NGINX
 
-        - name: Modify production.rb from template
-          template:
-            src: production.j2
-            dest: "{{ config_dir }}/environments/production.rb"
-            force: yes
+  handlers:
+  - name: Restart NGINX
+    become: true
+    systemd:
+      name: nginx
+      state: restarted
+
+  - name: Restart Puma
+    become: true
+    systemd:
+      name: puma
+      state: restarted
 
 
 
           #- name: Boot Puma # LO VAMOS A SETTEAR DE OTRA MANERA
-          #  command: "bundle exec rails server -e production"
+          #  command: "bundle exec rails server"
           #  args:
           #    chdir: "{{ redmine_dir }}"
