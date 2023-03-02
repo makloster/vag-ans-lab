@@ -1,6 +1,5 @@
 upstream app {
-    # Path to Puma SOCK file, as defined previously
-    server unix:{{ redmine_dir }}/shared/sockets/puma.sock fail_timeout=0;
+    server unix://{{ redmine_dir }}/shared/sockets/puma.sock fail_timeout=0;
 }
 
 server {
@@ -20,5 +19,6 @@ server {
 
     error_page 500 502 503 504 /500.html;
     client_max_body_size 4G;
-    keepalive_timeout 10;
 }
+
+keepalive_timeout 10;

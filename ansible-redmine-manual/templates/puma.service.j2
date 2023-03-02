@@ -1,0 +1,14 @@
+[Unit]
+Description=Puma HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+User=redmine
+WorkingDirectory=/home/redmine/redmine-5.0.4
+ExecStart=/home/redmine/.rbenv/shims/bundle exec puma -C /home/redmine/redmine-5.0.4/config/puma.rb
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

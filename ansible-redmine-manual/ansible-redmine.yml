@@ -1,12 +1,14 @@
 ---
 - name: Ansible playbook
   hosts: all
-
+  vars:
+    PUMA_SERVICE: "puma-s"
   environment:
     RBENV_ROOT: "{{ rbenv_dir }}"
     PATH: "{{ rbenv_dir }}/bin:{{ rbenv_dir }}/shims:{{ rbenv_dir }}/plugins/ruby-build/bin:{{ ansible_env.PATH }}"
     RAILS_ENV: "production"
     REDMINE_LANG: "es"
+    PUMA_SERVICE: "puma-s"
 
   collections:
     - community.mysql.mysql_user
@@ -138,7 +140,7 @@
             name: mysql-server
             state: present
 
-        - name: Update MySQL root password # HACER IDEMPOTENTE
+        - name: Update DB root password # HACER IDEMPOTENTE
           mysql_user:
             name: root
             login_user: root
@@ -149,7 +151,7 @@
             check_implicit_admin: yes
             state: present
 
-        - name: Create MySQL user for Redmine
+        - name: Create DB user for Redmine
           mysql_user:
             name: "{{ mysql_user }}"
             login_user: root
@@ -160,7 +162,7 @@
             host: localhost
             state: present
 
-    - name: Create config files and DB
+    - name: Create DB & config files
       become: true
       become_user: redmine
       tags:
@@ -182,7 +184,7 @@
           args:
             chdir: "{{ redmine_dir }}"
 
-        - name: Database schema objects creation
+        - name: DB schema objects creation
           command: "bundle exec rake db:migrate"
           args:
             chdir: "{{ redmine_dir }}"
@@ -202,6 +204,20 @@
       tags:
         - doit
       block:
+        - name: Add www-data to redmine group
+          user:
+            name: www-data
+            groups: redmine
+            append: yes
+
+        - name: Set directory permissions
+          file:
+            path: "{{ redmine_dir }}"
+            state: directory
+            owner: redmine
+            group: redmine
+            mode: 0775
+
         - name: Create Puma socket directory
           file:
             path: "{{ redmine_dir }}/shared/sockets/"
@@ -210,7 +226,7 @@
             owner: redmine
             group: redmine
 
-        - name: Create logs directory
+        - name: Create log directory
           file:
             path: "{{ redmine_dir }}/shared/log/"
             state: directory
@@ -218,29 +234,42 @@
             owner: redmine
             group: redmine
 
-#        - name: Initiate Puma service
-#          become_user: redmine 
+        - name: Create PIDs directory
+          file:
+            path: "{{ redmine_dir }}/shared/pids/"
+            state: directory
+            mode: 0755
+            owner: redmine
+            group: redmine
+
+        - name: Setup Puma config
+          become_user: redmine 
+          template:
+            src: puma.rb.j2
+            dest: "{{ config_dir }}/puma.rb"
+
+#        - name: Create puma.service
+#          template:
+#            src: puma.service.j2
+#            dest: /etc/systemd/system/puma.service
+#
+#        - name: Initialize Puma service
 #          systemd:
-#            name: puma
+#            name: puma 
 #            state: started
 #            enabled: yes
-#    
-#        - name: Setup Puma config
-#          become_user: redmine 
-#          template:
-#            src: puma-config.j2
-#            dest: "{{ config_dir }}/puma.rb"
-#          notify: Restart Puma
-
+    
     - name: Install nginx and setup config
       become: true
+      tags:
+        - doit
       block:
         - name: Install nginx
           apt:
             name:
               - nginx
 
-        - name: Initiate NGINX service
+        - name: Initialize NGINX service
           systemd:
             name: nginx
             state: started
@@ -249,7 +278,7 @@
         - name: Config NGINX with template
           template:
             src: default.j2
-            dest: "/etc/nginx/sites-available/default"
+            dest: "/etc/nginx/conf.d/http.conf"
           notify: Restart NGINX
 
   handlers:
@@ -267,7 +296,8 @@
 
 
 
+
           #- name: Boot Puma # LO VAMOS A SETTEAR DE OTRA MANERA
-          #  command: "bundle exec rails server"
+          #  command: "bundle exec rails server -e production"
           #  args:
           #    chdir: "{{ redmine_dir }}"
