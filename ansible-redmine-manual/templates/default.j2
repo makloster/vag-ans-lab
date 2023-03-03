@@ -3,8 +3,8 @@ upstream app {
 }
 
 server {
-    listen 80;
-    server_name localhost;
+    listen {{ listen_port }};
+    server_name {{ host_name }};
 
     root {{ redmine_dir }}/public;
 

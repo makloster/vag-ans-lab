@@ -140,7 +140,7 @@
             name: mysql-server
             state: present
 
-        - name: Update DB root password # HACER IDEMPOTENTE
+        - name: Update DB root password # HACER IDEMPOTENTE?
           mysql_user:
             name: root
             login_user: root
@@ -220,7 +220,7 @@
 
         - name: Create Puma socket directory
           file:
-            path: "{{ redmine_dir }}/shared/sockets/"
+            path: "{{ shared_dir }}/sockets/"
             state: directory
             mode: 0755
             owner: redmine
@@ -228,7 +228,7 @@
 
         - name: Create log directory
           file:
-            path: "{{ redmine_dir }}/shared/log/"
+            path: "{{ shared_dir }}/log/"
             state: directory
             mode: 0755
             owner: redmine
@@ -236,7 +236,7 @@
 
         - name: Create PIDs directory
           file:
-            path: "{{ redmine_dir }}/shared/pids/"
+            path: "{{ pids_dir }}/"
             state: directory
             mode: 0755
             owner: redmine
@@ -248,16 +248,16 @@
             src: puma.rb.j2
             dest: "{{ config_dir }}/puma.rb"
 
-#        - name: Create puma.service
-#          template:
-#            src: puma.service.j2
-#            dest: /etc/systemd/system/puma.service
-#
-#        - name: Initialize Puma service
-#          systemd:
-#            name: puma 
-#            state: started
-#            enabled: yes
+        - name: Create puma.service
+          template:
+            src: puma.service.j2
+            dest: /etc/systemd/system/puma.service
+
+        - name: Initialize Puma service
+          systemd:
+            name: "{{ puma_service }}"
+            state: started
+            enabled: yes
     
     - name: Install nginx and setup config
       become: true
@@ -291,13 +291,6 @@
   - name: Restart Puma
     become: true
     systemd:
-      name: puma
+      name: "{{ puma_service }}"
       state: restarted
 
-
-
-
-          #- name: Boot Puma # LO VAMOS A SETTEAR DE OTRA MANERA
-          #  command: "bundle exec rails server -e production"
-          #  args:
-          #    chdir: "{{ redmine_dir }}"

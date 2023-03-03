@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=redmine
-WorkingDirectory=/home/redmine/redmine-5.0.4
-ExecStart=/home/redmine/.rbenv/shims/bundle exec puma -C /home/redmine/redmine-5.0.4/config/puma.rb
+User={{ redmine_user }}
+WorkingDirectory={{ redmine_dir }}
+ExecStart={{ rbenv_dir }}/shims/bundle exec puma -C {{ config_dir }}/puma.rb
 Restart=always
 
 [Install]
