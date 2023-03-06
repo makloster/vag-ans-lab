@@ -1,1 +1,9 @@
 *.swp
+*.log
+*.pid
+*.tmp
+*.bak
+.env
+.vagrant
+secrets.yml
+.vault_pass
