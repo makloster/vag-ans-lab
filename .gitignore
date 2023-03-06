@@ -4,6 +4,6 @@
 *.tmp
 *.bak
 .env
-.vagrant
+.vagrant/
 secrets.yml
 .vault_pass

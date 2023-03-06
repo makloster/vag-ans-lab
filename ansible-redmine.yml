@@ -56,17 +56,14 @@
             name: python3-pymysql
 
   tasks:
-     # STEP 0.1 - USER SETUP
     - name: Create user redmine
       become: true
       user:
         name: redmine
-        #password: "{{ redmine_user_pass | password_hash('sha512', my_salt_variable) }}"
         home: "{{ redmine_user_home }}"
         state: present
         shell: /bin/bash
 
-     # STEP 0.2 - RUBY INSTALLATION
     - name: Install Rbenv and Ruby-build before Ruby
       become_user: redmine
       become: true
@@ -92,7 +89,6 @@
         - name: Set local Ruby version
           command: "rbenv global 3.1.3 -s"
 
-    # STEP 1 - REDMINE
     - name: Download and extract Redmine 5.0.4 repo
       become_user: redmine
       become: true
@@ -101,7 +97,6 @@
         dest: "{{ redmine_user_home }}/"
         remote_src: true
 
-    # STEP 2 - CREATE EMPTY DB & ACCOMPANYING USER
     - name: DB and user creation
       become: true
       block:
@@ -115,7 +110,7 @@
             name: mysql-server
             state: present
 
-        - name: Update DB root password # HACER IDEMPOTENTE?
+        - name: Update DB root password 
           mysql_user:
             name: root
             login_user: root
@@ -156,7 +151,6 @@
                 src: production.j2
                 dest: "{{ config_dir }}/environments/production.rb"
 
-    # STEP 3 - DATABASE CONN CONFIG
     - name: Database connection configuration
       become: true
       become_user: redmine
@@ -171,7 +165,6 @@
             src: configuration.j2
             dest: "{{ config_dir }}/configuration.yml"
 
-    # STEP 4 - DEPENDENCIES INSTALLATION
     - name: Install bundle
       become: true
       become_user: redmine
@@ -179,7 +172,6 @@
       args:
         chdir: "{{ redmine_dir }}"
 
-    # Step 5 - Session store secret generation
     - name: Session store secret generation
       become: true
       become_user: redmine
@@ -187,7 +179,6 @@
       args:
         chdir: "{{ redmine_dir }}"
 
-    # Step 6 - Database schema objects creation
     - name: DB schema objects creation
       become: true
       become_user: redmine
@@ -195,7 +186,6 @@
       args:
         chdir: "{{ redmine_dir }}"
 
-    # Step 7 - Database default data set
     - name: Load example data for DB
       become: true
       become_user: redmine
@@ -203,7 +193,6 @@
       args:
         chdir: "{{ redmine_dir }}"
 
-    # Step "8" - Remaining installations
     - name: Config and start Puma
       become: true
       block:
@@ -213,37 +202,18 @@
             groups: redmine
             append: yes
 
-        - name: Set directory permissions
+        - name: Set permissions and create directories
           file:
-            path: "{{ redmine_dir }}"
-            state: directory
-            owner: redmine
-            group: redmine
-            mode: 0775
-
-        - name: Create socket directory # REVISAR LOOP EN ANSIBLE
-          file:
-            path: "{{ shared_dir }}/sockets/"
+            path: "{{ item.path }}"
             state: directory
             mode: 0755
             owner: redmine
             group: redmine
-
-        - name: Create log directory
-          file:
-            path: "{{ shared_dir }}/log/"
-            state: directory
-            mode: 0755
-            owner: redmine
-            group: redmine
-
-        - name: Create PIDs directory
-          file:
-            path: "{{ shared_dir }}/pids"
-            state: directory
-            mode: 0755
-            owner: redmine
-            group: redmine
+          loop:
+            - { path: "{{ redmine_dir }}" }
+            - { path: "{{ shared_dir }}/sockets/" }
+            - { path: "{{ shared_dir }}/log/" }
+            - { path: "{{ shared_dir }}/pids/" }
 
         - name: Setup Puma config
           become_user: redmine 
@@ -262,7 +232,6 @@
             name: "{{ puma_service }}"
             state: started
             enabled: yes
-            # CHEQUEAR SI NECESITA DAEMON_RELOAD
     
     - name: Install nginx and setup config
       become: true
