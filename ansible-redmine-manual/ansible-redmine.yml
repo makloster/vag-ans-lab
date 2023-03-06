@@ -1,14 +1,11 @@
 ---
 - name: Ansible playbook
   hosts: all
-  vars:
-    PUMA_SERVICE: "puma-s"
   environment:
     RBENV_ROOT: "{{ rbenv_dir }}"
     PATH: "{{ rbenv_dir }}/bin:{{ rbenv_dir }}/shims:{{ rbenv_dir }}/plugins/ruby-build/bin:{{ ansible_env.PATH }}"
     RAILS_ENV: "production"
     REDMINE_LANG: "es"
-    PUMA_SERVICE: "puma-s"
 
   collections:
     - community.mysql.mysql_user
@@ -59,6 +56,7 @@
             name: python3-pymysql
 
   tasks:
+     # STEP 0.1 - USER SETUP
     - name: Create user redmine
       become: true
       user:
@@ -68,6 +66,7 @@
         state: present
         shell: /bin/bash
 
+     # STEP 0.2 - RUBY INSTALLATION
     - name: Install Rbenv and Ruby-build before Ruby
       become_user: redmine
       become: true
@@ -87,16 +86,13 @@
             path: "{{ redmine_user_home }}/.bashrc"
             line: 'eval "$(~/.rbenv/bin/rbenv init - bash)"'
 
-    - name: Install Ruby 3.1.3
-      become_user: redmine
-      become: true
-      block:
         - name: Install Ruby 3.1.3
           command: "rbenv install 3.1.3 -s"
 
         - name: Set local Ruby version
           command: "rbenv global 3.1.3 -s"
-      
+
+    # STEP 1 - REDMINE
     - name: Download and extract Redmine 5.0.4 repo
       become_user: redmine
       become: true
@@ -105,36 +101,15 @@
         dest: "{{ redmine_user_home }}/"
         remote_src: true
 
-    - name: Install library for MySQL Client 
+    # STEP 2 - CREATE EMPTY DB & ACCOMPANYING USER
+    - name: DB and user creation
       become: true
-      apt:
-        name:
-          - default-libmysqlclient-dev
- 
-    - name: Install bundle
-      become: true
-      become_user: redmine
       block:
-        - name: Create database.yml from template
-          template:
-            src: database.j2
-            dest: "{{ config_dir }}/database.yml"
+        - name: Install library for MySQL Client 
+          apt:
+            name: default-libmysqlclient-dev
+            state: present
 
-        - name: Create configuration.yml from template
-          template:
-            src: configuration.j2
-            dest: "{{ config_dir }}/configuration.yml"
-
-        - name: Install bundle as redmine user
-          command: "bundle install"
-          args:
-            chdir: "{{ redmine_dir }}"
-
-    - name: Install MySQL server and config root user plugin
-      become: true
-      tags:
-        - mysql
-      block:
         - name: Install MySQL server
           apt:
             name: mysql-server
@@ -162,47 +137,75 @@
             host: localhost
             state: present
 
-    - name: Create DB & config files
+        - name: Create DB & config files
+          become_user: redmine
+          block:
+            - name: Create database      
+              mysql_db:
+                name: "{{ mysql_database }}"
+                login_user: "{{ mysql_user }}"
+                login_password: "{{ mysql_password }}"
+                state: present
+                collation: utf8mb4_general_ci
+                encoding: utf8mb4
+              environment:
+                RAILS_ENV: production
+    
+            - name: Modify production.rb from template
+              template:
+                src: production.j2
+                dest: "{{ config_dir }}/environments/production.rb"
+
+    # STEP 3 - DATABASE CONN CONFIG
+    - name: Database connection configuration
       become: true
       become_user: redmine
-      tags:
-        - DB 
       block:
-        - name: Create database      
-          mysql_db:
-            name: "{{ mysql_database }}"
-            login_user: "{{ mysql_user }}"
-            login_password: "{{ mysql_password }}"
-            state: present
-            collation: utf8mb4_general_ci
-            encoding: utf8mb4
-          environment:
-            RAILS_ENV: production
-
-        - name: Session store secret generation
-          command: "bundle exec rake generate_secret_token"
-          args:
-            chdir: "{{ redmine_dir }}"
-
-        - name: DB schema objects creation
-          command: "bundle exec rake db:migrate"
-          args:
-            chdir: "{{ redmine_dir }}"
-
-        - name: Load example data for DB
-          command: "bundle exec rake redmine:load_default_data"
-          args:
-            chdir: "{{ redmine_dir }}"
-
-        - name: Modify production.rb from template
+        - name: Create database.yml from template
           template:
-            src: production.j2
-            dest: "{{ config_dir }}/environments/production.rb"
+            src: database.j2
+            dest: "{{ config_dir }}/database.yml"
 
-    - name: Start and config Puma
+        - name: Create configuration.yml from template
+          template:
+            src: configuration.j2
+            dest: "{{ config_dir }}/configuration.yml"
+
+    # STEP 4 - DEPENDENCIES INSTALLATION
+    - name: Install bundle
       become: true
-      tags:
-        - doit
+      become_user: redmine
+      command: "bundle install"
+      args:
+        chdir: "{{ redmine_dir }}"
+
+    # Step 5 - Session store secret generation
+    - name: Session store secret generation
+      become: true
+      become_user: redmine
+      command: "bundle exec rake generate_secret_token"
+      args:
+        chdir: "{{ redmine_dir }}"
+
+    # Step 6 - Database schema objects creation
+    - name: DB schema objects creation
+      become: true
+      become_user: redmine
+      command: "bundle exec rake db:migrate"
+      args:
+        chdir: "{{ redmine_dir }}"
+
+    # Step 7 - Database default data set
+    - name: Load example data for DB
+      become: true
+      become_user: redmine
+      command: "bundle exec rake redmine:load_default_data"
+      args:
+        chdir: "{{ redmine_dir }}"
+
+    # Step "8" - Remaining installations
+    - name: Config and start Puma
+      become: true
       block:
         - name: Add www-data to redmine group
           user:
@@ -218,7 +221,7 @@
             group: redmine
             mode: 0775
 
-        - name: Create Puma socket directory
+        - name: Create socket directory # REVISAR LOOP EN ANSIBLE
           file:
             path: "{{ shared_dir }}/sockets/"
             state: directory
@@ -236,7 +239,7 @@
 
         - name: Create PIDs directory
           file:
-            path: "{{ pids_dir }}/"
+            path: "{{ shared_dir }}/pids"
             state: directory
             mode: 0755
             owner: redmine
@@ -247,6 +250,7 @@
           template:
             src: puma.rb.j2
             dest: "{{ config_dir }}/puma.rb"
+          notify: Restart Puma 
 
         - name: Create puma.service
           template:
@@ -258,11 +262,10 @@
             name: "{{ puma_service }}"
             state: started
             enabled: yes
+            # CHEQUEAR SI NECESITA DAEMON_RELOAD
     
     - name: Install nginx and setup config
       become: true
-      tags:
-        - doit
       block:
         - name: Install nginx
           apt:
@@ -282,15 +285,15 @@
           notify: Restart NGINX
 
   handlers:
-  - name: Restart NGINX
-    become: true
-    systemd:
-      name: nginx
-      state: restarted
-
   - name: Restart Puma
     become: true
     systemd:
       name: "{{ puma_service }}"
+      state: restarted
+
+  - name: Restart NGINX
+    become: true
+    systemd:
+      name: nginx
       state: restarted
 

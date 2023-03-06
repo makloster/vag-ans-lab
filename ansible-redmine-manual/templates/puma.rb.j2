@@ -7,8 +7,8 @@ environment rails_env
 
 bind "unix://{{ shared_dir }}/sockets/puma.sock"
 
-pidfile "{{ pids_dir }}/puma.pid"
-state_path "{{ pids_dir }}/puma.state"
+pidfile "{{ shared_dir }}/pids/puma.pid"
+state_path "{{ shared_dir }}/pids/puma.state"
 activate_control_app
 
 on_worker_boot do
