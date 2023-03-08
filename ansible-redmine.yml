@@ -51,7 +51,6 @@
               - uuid-dev
 
         - name: Install pymysql
-          become: true
           apt:
             name: python3-pymysql
 
