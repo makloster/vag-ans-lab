@@ -143,8 +143,6 @@
                 state: present
                 collation: utf8mb4_general_ci
                 encoding: utf8mb4
-              environment:
-                RAILS_ENV: production
     
             - name: Modify production.rb from template
               template:
