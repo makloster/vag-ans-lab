@@ -8,22 +8,10 @@ config_dir: "{{ redmine_dir }}/config"
 shared_dir: "{{ redmine_dir }}/shared"
 pids_dir: "{{ shared_dir }}/pids"
 
-mysql_datadir: /var/lib/mysql
-login_unix_socket: /var/run/mysqld/mysqld.sock
-
 # redmine credentials
 redmine_user: redmine
 redmine_user_pass: 789a456z
 my_salt_variable: dFku7402
-
-# mysql vars
-mysql_database: redmine-db
-
-## credentials
-mysql_root_username: root
-mysql_root_password: ''
-mysql_user: redmine
-mysql_password: redmine-user-pswd
 
 # nginx config
 listen_port: 80

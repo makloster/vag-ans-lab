@@ -1,15 +1,22 @@
 ---
 - name: Ansible playbook
   hosts: all
+
+  vars_files:
+    - roles/geerlingguy.mysql/vars/main.yml
+
+  roles:
+    - role: geerlingguy.mysql
+      become: yes
+
+  collections:
+    - community.mysql
+
   environment:
     RBENV_ROOT: "{{ rbenv_dir }}"
     PATH: "{{ rbenv_dir }}/bin:{{ rbenv_dir }}/shims:{{ rbenv_dir }}/plugins/ruby-build/bin:{{ ansible_env.PATH }}"
     RAILS_ENV: "production"
     REDMINE_LANG: "es"
-
-  collections:
-    - community.mysql.mysql_user
-    - community.mysql.mysql_db
 
   pre_tasks:
     - name: Install tools and dependencies
@@ -96,97 +103,10 @@
         dest: "{{ redmine_user_home }}/"
         remote_src: true
 
-    - name: DB and user creation
-      become: true
-      block:
-        - name: Install library for MySQL Client 
-          apt:
-            name: default-libmysqlclient-dev
-            state: present
-
-        - name: Install MySQL server
-          apt:
-            name: mysql-server
-            state: present
-
-        - name: Update DB root password 
-          mysql_user:
-            name: root
-            login_user: root
-            login_password: ''
-            login_unix_socket: "{{ login_unix_socket }}" 
-            password: "{{ mysql_root_password }}"
-            host_all: yes
-            check_implicit_admin: yes
-            state: present
-
-        - name: Create DB user for Redmine
-          mysql_user:
-            name: "{{ mysql_user }}"
-            login_user: root
-            login_password: "{{ mysql_root_password }}"
-            login_unix_socket: "{{ login_unix_socket }}" 
-            password: "{{ mysql_password }}"
-            priv: '*.*:ALL'
-            host: localhost
-            state: present
-
-        - name: Create DB & config files
-          become_user: redmine
-          block:
-            - name: Create database      
-              mysql_db:
-                name: "{{ mysql_database }}"
-                login_user: "{{ mysql_user }}"
-                login_password: "{{ mysql_password }}"
-                state: present
-                collation: utf8mb4_general_ci
-                encoding: utf8mb4
-    
-            - name: Modify production.rb from template
-              template:
-                src: production.j2
-                dest: "{{ config_dir }}/environments/production.rb"
-
-    - name: Database connection configuration
-      become: true
-      become_user: redmine
-      block:
-        - name: Create database.yml from template
-          template:
-            src: database.j2
-            dest: "{{ config_dir }}/database.yml"
-
-        - name: Create configuration.yml from template
-          template:
-            src: configuration.j2
-            dest: "{{ config_dir }}/configuration.yml"
-
     - name: Install bundle
       become: true
       become_user: redmine
       command: "bundle install"
-      args:
-        chdir: "{{ redmine_dir }}"
-
-    - name: Session store secret generation
-      become: true
-      become_user: redmine
-      command: "bundle exec rake generate_secret_token"
-      args:
-        chdir: "{{ redmine_dir }}"
-
-    - name: DB schema objects creation
-      become: true
-      become_user: redmine
-      command: "bundle exec rake db:migrate"
-      args:
-        chdir: "{{ redmine_dir }}"
-
-    - name: Load example data for DB
-      become: true
-      become_user: redmine
-      command: "bundle exec rake redmine:load_default_data"
       args:
         chdir: "{{ redmine_dir }}"
 
